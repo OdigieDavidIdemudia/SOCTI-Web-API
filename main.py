@@ -20,9 +20,11 @@ app.add_middleware(
 TEMP_DIR = "/tmp/socti_downloads"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+from typing import Optional
+
 class DownloadRequest(BaseModel):
     url: str
-    cookies: str = None
+    cookies: Optional[str] = None
 
 @app.get("/health")
 def health_check():
