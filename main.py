@@ -22,6 +22,7 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 class DownloadRequest(BaseModel):
     url: str
+    cookies: str = None
 
 @app.get("/health")
 def health_check():
@@ -46,10 +47,19 @@ async def download_video(req: DownloadRequest):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True, # Only download a single video, not the whole playlist
+        'extractor_args': {
+            'youtube': ['player_client=ios,android']
+        }
     }
     
     # Bypass YouTube bot protection by using cookies if available
-    if os.path.exists("cookies.txt"):
+    # We will also support passing a custom cookies string in the request
+    temp_cookie_path = os.path.join(TEMP_DIR, f"cookies_{job_id}.txt")
+    if req.cookies:
+        with open(temp_cookie_path, "w") as f:
+            f.write(req.cookies)
+        ydl_opts['cookiefile'] = temp_cookie_path
+    elif os.path.exists("cookies.txt"):
         ydl_opts['cookiefile'] = "cookies.txt"
     
     try:
@@ -90,6 +100,12 @@ async def download_video(req: DownloadRequest):
     except Exception as e:
         print(f"Download Error: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to download video: {str(e)}")
+    finally:
+        if os.path.exists(temp_cookie_path):
+            try:
+                os.remove(temp_cookie_path)
+            except Exception:
+                pass
 
 
 def cleanup_old_files():
