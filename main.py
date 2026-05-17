@@ -48,6 +48,10 @@ async def download_video(req: DownloadRequest):
         'noplaylist': True, # Only download a single video, not the whole playlist
     }
     
+    # Bypass YouTube bot protection by using cookies if available
+    if os.path.exists("cookies.txt"):
+        ydl_opts['cookiefile'] = "cookies.txt"
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             # Extract info to get the final filename before downloading
