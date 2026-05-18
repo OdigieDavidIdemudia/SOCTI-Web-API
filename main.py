@@ -25,6 +25,7 @@ from typing import Optional
 class DownloadRequest(BaseModel):
     url: str
     cookies: Optional[str] = None
+    quality: Optional[str] = "best"
 
 @app.get("/health")
 def health_check():
@@ -42,10 +43,26 @@ async def download_video(req: DownloadRequest):
     job_id = str(uuid.uuid4())
     output_template = os.path.join(TEMP_DIR, f"{job_id}.%(ext)s")
     
+    quality = req.quality or "best"
+    
+    # Map quality presets to yt-dlp format options
+    format_option = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+    
+    if quality == '1080':
+        format_option = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best'
+    elif quality == '720':
+        format_option = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best'
+    elif quality == '480':
+        format_option = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best'
+    elif quality == '360':
+        format_option = 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best'
+    elif quality == 'audio':
+        format_option = 'bestaudio/best'
+
     ydl_opts = {
         'outtmpl': output_template,
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', # Prioritize mp4
-        'merge_output_format': 'mp4',
+        'format': format_option,
+        'merge_output_format': 'mp4' if quality != 'audio' else None,
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True, # Only download a single video, not the whole playlist
@@ -72,31 +89,50 @@ async def download_video(req: DownloadRequest):
             downloaded_file = ydl.prepare_filename(info_dict)
             
             # If merging happened, the actual file might have .mp4 appended if it wasn't already
+            # Or if audio-only format resulted in .m4a, .webm, or .mp3, let's find the correct file
             if not os.path.exists(downloaded_file):
                 # Fallback check for common merged extensions
-                if os.path.exists(downloaded_file.replace('.webm', '.mp4')):
-                    downloaded_file = downloaded_file.replace('.webm', '.mp4')
-                elif os.path.exists(downloaded_file.replace('.mkv', '.mp4')):
-                    downloaded_file = downloaded_file.replace('.mkv', '.mp4')
+                for possible_ext in ['.mp4', '.m4a', '.mp3', '.webm', '.mkv']:
+                    base, _ = os.path.splitext(downloaded_file)
+                    if os.path.exists(base + possible_ext):
+                        downloaded_file = base + possible_ext
+                        break
 
             if not os.path.exists(downloaded_file):
-                raise FileNotFoundError("File was not downloaded properly.")
+                # Try to scan the TEMP_DIR for any file starting with job_id
+                found = False
+                for f in os.listdir(TEMP_DIR):
+                    if f.startswith(job_id):
+                        downloaded_file = os.path.join(TEMP_DIR, f)
+                        found = True
+                        break
+                if not found:
+                    raise FileNotFoundError("File was not downloaded properly.")
+
+            # Get actual extension of the downloaded file
+            _, ext = os.path.splitext(downloaded_file)
+            ext = ext.lstrip('.') or 'mp4'
 
             # Sanitize the title for the download filename
             safe_title = "".join([c for c in info_dict.get('title', 'video') if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-            filename = f"{safe_title}.mp4"
+            filename = f"{safe_title}.{ext}"
 
-            # We use a background task to delete the file after it's been streamed, 
-            # but FileResponse doesn't have native background tasks in starlette easily without wrapping.
-            # As a simpler approach for a stateless container (like Render), 
-            # we'll just return the file. Render containers spin down or we can add a cron cleanup.
-            # To avoid disk filling up, let's implement a quick cleanup of old files in TEMP_DIR.
+            # Set correct media type
+            media_type = "video/mp4"
+            if ext in ['m4a', 'aac', 'mp3', 'webm', 'ogg']:
+                if ext == 'mp3':
+                    media_type = "audio/mpeg"
+                elif ext in ['m4a', 'aac']:
+                    media_type = "audio/mp4"
+                else:
+                    media_type = f"audio/{ext}"
+
             cleanup_old_files()
 
             return FileResponse(
                 path=downloaded_file, 
                 filename=filename, 
-                media_type="video/mp4"
+                media_type=media_type
             )
 
     except Exception as e:
