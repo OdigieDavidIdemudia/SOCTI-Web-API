@@ -15,6 +15,7 @@ app.add_middleware(
     allow_origins=["*"], # In production, restrict to your Vercel domains
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "Content-Length"],
 )
 
 TEMP_DIR = "/tmp/socti_downloads"
