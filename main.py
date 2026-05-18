@@ -91,11 +91,11 @@ async def download_video(req: DownloadRequest):
         except Exception as first_err:
             # If the format parsing or merge fails (very common for non-YouTube links like Pinterest/TikTok/etc.
             # that don't split video and audio tracks), we retry using the best single progressive stream fallback.
-            print(f"Primary format download failed: {first_err}. Retrying with best progressive stream fallback...")
+            print(f"Primary format download failed: {first_err}. Retrying with absolute default format settings...")
             ydl_opts_fallback = ydl_opts.copy()
-            # Reset format to 'best' (progressive video+audio) which is 100% supported by all platforms
-            ydl_opts_fallback['format'] = 'best'
-            ydl_opts_fallback['merge_output_format'] = None
+            # Remove format constraints entirely so yt-dlp uses its absolute defaults
+            ydl_opts_fallback.pop('format', None)
+            ydl_opts_fallback.pop('merge_output_format', None)
             
             with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
                 info_dict = ydl.extract_info(url, download=True)
