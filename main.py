@@ -74,6 +74,7 @@ async def download_video(req: DownloadRequest):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True, # Only download a single video, not the whole playlist
+        'no_color': True,
         'extractor_args': {
             'youtube': ['player_client=ios,android']
         }
@@ -184,6 +185,9 @@ def run_yt_dlp_download(url, ydl_opts, q, fallback_opts=None):
     """
     Runs the download in a background thread and puts progress/errors onto the queue.
     """
+    import re
+    ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F]|(?:\x1B\[|\x9B)[0-?]*[ -/]*[@-~])')
+
     def progress_hook(d):
         if d['status'] == 'downloading':
             total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
@@ -200,7 +204,10 @@ def run_yt_dlp_download(url, ydl_opts, q, fallback_opts=None):
                     percent = 0
                     
             speed = d.get('_speed_str', '').strip()
+            speed = ansi_escape.sub('', speed)
+            
             eta = d.get('_eta_str', '').strip()
+            eta = ansi_escape.sub('', eta)
             
             q.put({
                 "status": "downloading",
@@ -295,6 +302,7 @@ async def download_video_stream(req: DownloadRequest):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
+        'no_color': True,
         'extractor_args': {
             'youtube': ['player_client=ios,android']
         }
