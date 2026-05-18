@@ -83,11 +83,23 @@ async def download_video(req: DownloadRequest):
         ydl_opts['cookiefile'] = "cookies.txt"
     
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extract info to get the final filename before downloading
-            info_dict = ydl.extract_info(url, download=True)
-            # yt-dlp can sometimes change the extension during merging, so we get the prepared filename
-            downloaded_file = ydl.prepare_filename(info_dict)
+        # First try: download with requested quality format options
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(url, download=True)
+                downloaded_file = ydl.prepare_filename(info_dict)
+        except Exception as first_err:
+            # If the format parsing or merge fails (very common for non-YouTube links like Pinterest/TikTok/etc.
+            # that don't split video and audio tracks), we retry using the best single progressive stream fallback.
+            print(f"Primary format download failed: {first_err}. Retrying with best progressive stream fallback...")
+            ydl_opts_fallback = ydl_opts.copy()
+            # Reset format to 'best' (progressive video+audio) which is 100% supported by all platforms
+            ydl_opts_fallback['format'] = 'best'
+            ydl_opts_fallback['merge_output_format'] = None
+            
+            with yt_dlp.YoutubeDL(ydl_opts_fallback) as ydl:
+                info_dict = ydl.extract_info(url, download=True)
+                downloaded_file = ydl.prepare_filename(info_dict)
             
             # If merging happened, the actual file might have .mp4 appended if it wasn't already
             # Or if audio-only format resulted in .m4a, .webm, or .mp3, let's find the correct file
